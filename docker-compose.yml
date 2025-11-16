@@ -1,0 +1,66 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------
+  # 1. PostgreSQL Database Service (Official Image)
+  # ----------------------------------------------------
+  db:
+    image: postgres:16-alpine 
+    container_name: gatherin_postgres_db
+    restart: always
+    environment:
+      POSTGRES_USER: chatuser
+      POSTGRES_PASSWORD: chatpassword
+      POSTGRES_DB: gatherindb
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data/
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      
+  # ----------------------------------------------------
+  # 2. Spring Boot Backend Service (GatherIn API)
+  # ----------------------------------------------------
+  backend:
+    container_name: gatherin_backend
+    # Build context is the root, Dockerfile path is specified relative to the context
+    build: 
+      context: .
+      dockerfile: infra/spring-boot/Dockerfile
+    restart: always
+    ports:
+      - "8080:8080"
+    environment:
+      # Connect to the 'db' service using its name on the Docker network
+      SPRING_DATASOURCE_URL: jdbc:postgresql://db:5432/gatherindb
+      SPRING_DATASOURCE_USERNAME: chatuser
+      SPRING_DATASOURCE_PASSWORD: chatpassword
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # ----------------------------------------------------
+  # 3. Next.js Frontend Service (GatherIn Client)
+  # ----------------------------------------------------
+  frontend:
+    container_name: gatherin_frontend
+    build:
+      context: .
+      dockerfile: infra/next-js/Dockerfile
+    restart: always
+    ports:
+      # Next.js default port
+      - "3000:3000"
+    environment:
+      # service name 'backend' on port 8080.
+      NEXT_PUBLIC_API_URL: http://backend:8080
+    depends_on:
+      backend:
+        condition: service_started # Frontend typically only needs the backend to be running
+
+volumes:
+  postgres_data:
